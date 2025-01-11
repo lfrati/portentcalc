@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portent of Calamity Simulator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <script src="modern_types.js"></script>
+    <style>
+        /* Previous styles remain the same */
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 0 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .section {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 200px;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+            font-family: monospace;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin: 20px 0;
+        }
+
+        .deck-composition {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .card-entry {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .card-types {
+            color: #666;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="section">
+        <h1>Portent of Calamity Simulator</h1>
+        <p>Enter your deck list using the following format:</p>
+        <pre>
+4 Island
+1 Omniscience
+2 Emrakul, the Promised End</pre>
+        <textarea id="cardList" placeholder="Enter your deck list here..."></textarea>
+        <button onclick="analyzeDeck()">Analyze Deck</button>
+    </div>
+    <div id="deck-debug" class="section" style="display: none;">
+        <h2>Parsed Deck Composition</h2>
+        <div id="deck-composition"></div>
+    </div>
+    <div id="results" class="section" style="display: none;">
+        <h2>Simulation Results (10,000 trials per X value)</h2>
+        <h3>Average Number of Distinct Types</h3>
+        <div class="chart-container">
+            <canvas id="averageChart"></canvas>
+        </div>
+        <h3>Success Rate (≥4 Types)</h3>
+        <div class="chart-container">
+            <canvas id="successChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        function parseDecklist(text) {
+            const mainDeck = [];
+            const lines = text.trim().split('\n');
+            
+            for (const line of lines) {
+                const trimmedLine = line.trim();
+                if (!trimmedLine || trimmedLine === 'Deck') continue;
+
+                const parts = trimmedLine.split(' ', 1);
+                const quantity = parseInt(parts[0]);
+                const name = trimmedLine.substring(parts[0].length + 1);
+
+                if (name && !isNaN(quantity)) {
+                    mainDeck.push([quantity, name]);
+                }
+            }
+
+            return mainDeck;
+        }
+
+        function buildDeckArray(deckList) {
+            const deck = [];
+            const composition = new Map();
+            
+            for (const [quantity, cardName] of deckList) {
+                const types = cardDatabase[cardName];
+                if (types) {
+                    composition.set(cardName, { quantity, types });
+                    for (let i = 0; i < quantity; i++) {
+                        deck.push({ name: cardName, types: types });
+                    }
+                }
+            }
+            
+            displayDeckComposition(composition);
+            return deck;
+        }
+
+        function displayDeckComposition(composition) {
+            const debugDiv = document.getElementById('deck-debug');
+            const compDiv = document.getElementById('deck-composition');
+            debugDiv.style.display = 'block';
+            
+            let html = '<div class="deck-composition">';
+            for (const [cardName, info] of composition) {
+                html += `
+                    <div class="card-entry">
+                        <span>${info.quantity}x ${cardName}</span>
+                        <span class="card-types">${info.types.join(', ')}</span>
+                    </div>
+                `;
+            }
+            html += '</div>';
+            
+            compDiv.innerHTML = html;
+        }
+
+        function simulatePortent(deck, X) {
+            const revealedCards = [];
+            const deckCopy = [...deck];
+            
+            for (let i = 0; i < X && deckCopy.length > 0; i++) {
+                const randomIndex = Math.floor(Math.random() * deckCopy.length);
+                revealedCards.push(deckCopy[randomIndex]);
+                deckCopy.splice(randomIndex, 1);
+            }
+            
+            const uniqueTypes = new Set();
+            revealedCards.forEach(card => {
+                card.types.forEach(type => uniqueTypes.add(type));
+            });
+            
+            return Math.min(uniqueTypes.size, X);
+        }
+
+        let averageChart = null;
+        let successChart = null;
+
+        /**
+         * Creates a chart showing average distinct types for each X value
+         * @param {Array} data - Array of {x, y} points for the chart
+         */
+        function displayAverageChart(data) {
+            const ctx = document.getElementById('averageChart').getContext('2d');
+            
+            if (averageChart) {
+                averageChart.destroy();
+            }
+
+            const yValues = data.map(d => d.y);
+            const minY = Math.min(...yValues) * 0.9;
+            const maxY = Math.max(...yValues) * 1.1;
+
+            averageChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Average Distinct Types',
+                        data: data,
+                        borderColor: 'rgb(75, 192, 192)',
+                        backgroundColor: 'rgb(75, 192, 192)',
+                        borderWidth: 2,
+                        tension: 0.1,
+                        pointRadius: 4,
+                        fill: false
+                    }, {
+                        label: 'Target (4 types)',
+                        data: data.map(d => ({ x: d.x, y: 4 })),
+                        borderColor: 'rgba(255, 99, 132, 0.8)',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            min: minY,
+                            max: maxY,
+                            title: {
+                                display: true,
+                                text: 'Average Number of Distinct Types'
+                            }
+                        },
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'X Value'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        /**
+         * Creates a chart showing success rate for each X value
+         * @param {Array} data - Array of {x, y} points for the chart
+         */
+        function displaySuccessChart(data) {
+            const ctx = document.getElementById('successChart').getContext('2d');
+            
+            if (successChart) {
+                successChart.destroy();
+            }
+
+            successChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Success Rate (≥4 Types)',
+                        data: data,
+                        borderColor: 'rgb(255, 159, 64)',
+                        backgroundColor: 'rgb(255, 159, 64)',
+                        borderWidth: 2,
+                        tension: 0.1,
+                        pointRadius: 4,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            min: 0,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'Success Rate (%) '
+                            }
+                        },
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'X Value '
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function displayResults(results) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.style.display = 'block';
+
+            // Calculate averages and success rates for each X value
+            const averageData = [];
+            const successData = [];
+
+            for (const [x, values] of Object.entries(results)) {
+                const xNum = parseInt(x);
+                
+                // Calculate average
+                const mean = values.reduce((a, b) => a + b) / values.length;
+                averageData.push({ x: xNum, y: mean });
+                
+                // Calculate success rate (≥4 types)
+                const successCount = values.filter(v => v >= 4).length;
+                const successRate = (successCount / values.length) * 100;
+                successData.push({ x: xNum, y: successRate });
+            }
+
+            displayAverageChart(averageData);
+            displaySuccessChart(successData);
+        }
+
+        function analyzeDeck() {
+            const input = document.getElementById('cardList').value;
+            const mainDeck = parseDecklist(input);
+            const deck = buildDeckArray(mainDeck);
+            
+            if (deck.length === 0) {
+                alert('No valid cards found in the deck list!');
+                return;
+            }
+
+            const trials = 10000;
+            const results = {};
+
+            for (let X = 4; X <= 10; X++) {
+                results[X] = [];
+                for (let trial = 0; trial < trials; trial++) {
+                    results[X].push(simulatePortent(deck, X));
+                }
+            }
+
+            displayResults(results);
+        }
+    </script>
+</body>
+</html>
