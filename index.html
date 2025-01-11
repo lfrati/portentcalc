@@ -7,7 +7,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
     <script src="modern_types.js"></script>
     <style>
-        /* Previous styles remain the same */
         body {
             font-family: Arial, sans-serif;
             max-width: 1000px;
@@ -33,6 +32,7 @@
             border-radius: 4px;
             resize: vertical;
             font-family: monospace;
+            box-sizing: border-box;
         }
 
         button {
@@ -60,6 +60,7 @@
             padding: 15px;
             background: #f8f9fa;
             border-radius: 8px;
+            position: relative;
         }
 
         .card-entry {
@@ -67,11 +68,46 @@
             justify-content: space-between;
             padding: 5px 0;
             border-bottom: 1px solid #eee;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .card-entry:hover {
+            background-color: #f0f0f0;
         }
 
         .card-types {
             color: #666;
             font-style: italic;
+        }
+
+        .card-preview {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            pointer-events: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .card-preview img {
+            width: 240px;
+            height: auto;
+            display: block;
+        }
+
+        #loading-indicator {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            z-index: 1001;
         }
     </style>
 </head>
@@ -101,8 +137,109 @@
             <canvas id="averageChart"></canvas>
         </div>
     </div>
+    <div id="loading-indicator">Loading card image...</div>
+    <div id="card-preview" class="card-preview"></div>
 
     <script>
+        const cardPreview = document.getElementById('card-preview');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        let cardImageCache = new Map();
+
+        async function fetchCardImage(cardName) {
+            if (cardImageCache.has(cardName)) {
+                return cardImageCache.get(cardName);
+            }
+
+            const baseURL = "https://api.scryfall.com/cards/named?exact=";
+            const encodedCardName = encodeURIComponent(cardName);
+            const apiURL = `${baseURL}${encodedCardName}`;
+            
+            try {
+                loadingIndicator.style.display = 'block';
+                const response = await fetch(apiURL);
+                if (!response.ok) throw new Error("Card not found");
+                const data = await response.json();
+                if (data.image_uris && data.image_uris.normal) {
+                    cardImageCache.set(cardName, data.image_uris.normal);
+                    return data.image_uris.normal;
+                }
+                return null;
+            } catch (error) {
+                console.error("Error fetching card:", error);
+                return null;
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        }
+
+        function updatePreviewPosition(event, element) {
+            const rect = element.getBoundingClientRect();
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            const previewWidth = 240; // Same as in CSS
+            const previewHeight = 336; // Approximate MTG card ratio
+
+            // Calculate position
+            let left = event.clientX + 20;
+            let top = event.clientY - previewHeight/2;
+
+            // Adjust if preview would go off screen
+            if (left + previewWidth > viewportWidth) {
+                left = event.clientX - previewWidth - 20;
+            }
+            if (top + previewHeight > viewportHeight) {
+                top = viewportHeight - previewHeight - 10;
+            }
+            if (top < 10) top = 10;
+
+            cardPreview.style.left = left + 'px';
+            cardPreview.style.top = top + 'px';
+        }
+
+        function showCardPreview(event, cardName, element) {
+            cardPreview.style.display = 'block';
+            updatePreviewPosition(event, element);
+            
+            fetchCardImage(cardName).then(imageUrl => {
+                if (imageUrl) {
+                    cardPreview.innerHTML = `<img src="${imageUrl}" alt="${cardName}" />`;
+                    cardPreview.style.display = 'block';
+                }
+            });
+        }
+
+        function hideCardPreview() {
+            cardPreview.style.display = 'none';
+            cardPreview.innerHTML = '';
+        }
+
+        function displayDeckComposition(composition) {
+            const debugDiv = document.getElementById('deck-debug');
+            const compDiv = document.getElementById('deck-composition');
+            debugDiv.style.display = 'block';
+            
+            let html = '<div class="deck-composition">';
+            let tot = 0;
+            for (const [cardName, info] of composition) {
+                tot += info.quantity;
+                const escapedCardName = cardName.replace(/'/g, "\\'");
+                html += `
+                    <div class="card-entry" 
+                         onmousemove="updatePreviewPosition(event, this)"
+                         onmouseenter="showCardPreview(event, '${escapedCardName}', this)"
+                         onmouseleave="hideCardPreview()">
+                        <span>${info.quantity}x ${cardName}</span>
+                        <span class="card-types">${info.types.join(', ')}</span>
+                    </div>
+                `;
+            }
+            html += '</div>';
+            html += `<span><b>Total: ${tot} cards</b></span>`;
+            
+            compDiv.innerHTML = html;
+        }
+
+        // Rest of the original JavaScript code remains the same
         function parseDecklist(text) {
             const mainDeck = [];
             const lines = text.trim().split('\n');
@@ -141,25 +278,6 @@
             return deck;
         }
 
-        function displayDeckComposition(composition) {
-            const debugDiv = document.getElementById('deck-debug');
-            const compDiv = document.getElementById('deck-composition');
-            debugDiv.style.display = 'block';
-            
-            let html = '<div class="deck-composition">';
-            for (const [cardName, info] of composition) {
-                html += `
-                    <div class="card-entry">
-                        <span>${info.quantity}x ${cardName}</span>
-                        <span class="card-types">${info.types.join(', ')}</span>
-                    </div>
-                `;
-            }
-            html += '</div>';
-            
-            compDiv.innerHTML = html;
-        }
-
         function simulatePortent(deck, X) {
             const revealedCards = [];
             const deckCopy = [...deck];
@@ -181,10 +299,6 @@
         let averageChart = null;
         let successChart = null;
 
-        /**
-         * Creates a chart showing average distinct types for each X value
-         * @param {Array} data - Array of {x, y} points for the chart
-         */
         function displayAverageChart(data) {
             const ctx = document.getElementById('averageChart').getContext('2d');
             
@@ -242,10 +356,6 @@
             });
         }
 
-        /**
-         * Creates a chart showing success rate for each X value
-         * @param {Array} data - Array of {x, y} points for the chart
-         */
         function displaySuccessChart(data) {
             const ctx = document.getElementById('successChart').getContext('2d');
             
@@ -295,18 +405,15 @@
             const resultsDiv = document.getElementById('results');
             resultsDiv.style.display = 'block';
 
-            // Calculate averages and success rates for each X value
             const averageData = [];
             const successData = [];
 
             for (const [x, values] of Object.entries(results)) {
                 const xNum = parseInt(x);
                 
-                // Calculate average
                 const mean = values.reduce((a, b) => a + b) / values.length;
                 averageData.push({ x: xNum, y: mean });
                 
-                // Calculate success rate (≥4 types)
                 const successCount = values.filter(v => v >= 4).length;
                 const successRate = (successCount / values.length) * 100;
                 successData.push({ x: xNum, y: successRate });
@@ -338,6 +445,10 @@
 
             displayResults(results);
         }
+        // Add a scroll event listener to the window
+        window.addEventListener('scroll', function() {
+            hideCardPreview();
+        });
     </script>
 </body>
 </html>
