@@ -92,13 +92,13 @@
     </div>
     <div id="results" class="section" style="display: none;">
         <h2>Simulation Results (10,000 trials per X value)</h2>
-        <h3>Average Number of Distinct Types</h3>
-        <div class="chart-container">
-            <canvas id="averageChart"></canvas>
-        </div>
         <h3>Success Rate (≥4 Types)</h3>
         <div class="chart-container">
             <canvas id="successChart"></canvas>
+        </div>
+        <h3>Average Number of Distinct Types</h3>
+        <div class="chart-container">
+            <canvas id="averageChart"></canvas>
         </div>
     </div>
 
@@ -128,7 +128,7 @@
             const composition = new Map();
             
             for (const [quantity, cardName] of deckList) {
-                const types = cardDatabase[cardName];
+                const types = cardDatabase[cardName.toLowerCase()];
                 if (types) {
                     composition.set(cardName, { quantity, types });
                     for (let i = 0; i < quantity; i++) {

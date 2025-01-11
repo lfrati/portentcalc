@@ -37,7 +37,12 @@ for name, card in tqdm(data.items(), desc="Processing cards"):
         print(name)
         continue
     if name not in card_info:
-        card_info[name] = types
+        card_info[name.lower()] = types
+        if " // " in name:
+            # e.g. Sink into Stupor // Soporific Springs
+            parts = name.split(" // ")
+            for part in parts:
+                card_info[part.lower()] = types
 
 print("\nWriting to file...")
 # Write the processed data to file
