@@ -61,17 +61,22 @@ function displayDeckComposition(composition) {
     
     let html = '<div class="deck-composition">';
     let tot = 0;
-    for (const [cardName, info] of composition) {
-        tot += info.quantity;
-        const escapedCardName = cardName.replace(/'/g, "\\'");
+    for (const [cardName, quantity] of composition) {
+        tot += quantity;
+        //const escapedCardName = cardName.replace(/'/g, "\\'");
+        const card = cardCache.get(cardName);
+        let types = card.types.join(', ');
+        let cmc = String(card.cmc).padStart(2, ' ').replace(/ /g, '&nbsp;')
         html += `
             <div class="card-entry">
+                <a href="${card.imageUrl}" class="card-link" target="_blank" rel="noopener noreferrer">
                 <div class="card-main-info">
-                    <span class="card-quantity">${info.quantity}x</span>
+                    <span class="card-quantity">${quantity}x</span>
                     <span class="card-name">${cardName}</span>
                 </div>
-                <span class="card-types">${info.types.join(', ')}</span>
-                <span class="card-cmc">cmc <b>${String(info.cmc).padStart(2, ' ').replace(/ /g, '&nbsp;')}</b></span>
+                <span class="card-types">${types}</span>
+                <span class="card-cmc">cmc <b>${cmc}</b></span>
+                </a>
             </div>        `;
     }
     html += '</div>';
@@ -114,7 +119,7 @@ async function buildDeckArray(deckList) {
         for (const [quantity, cardName] of deckList) {
             try {
                 const cardData = await fetchCardData(cardName);
-                composition.set(cardName, { quantity, cmc: cardData.cmc, types: cardData.types });
+                composition.set(cardName, quantity);
                 
                 for (let i = 0; i < quantity; i++) {
                     deck.push({ name: cardName, cmc: cardData.cmc, types: cardData.types});
